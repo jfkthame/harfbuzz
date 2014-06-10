@@ -42,36 +42,36 @@ namespace OT {
 
 /* Cast to struct T, reference to reference */
 template<typename Type, typename TObject>
-inline const Type& CastR(const TObject &X)
+static inline const Type& CastR(const TObject &X)
 { return reinterpret_cast<const Type&> (X); }
 template<typename Type, typename TObject>
-inline Type& CastR(TObject &X)
+static inline Type& CastR(TObject &X)
 { return reinterpret_cast<Type&> (X); }
 
 /* Cast to struct T, pointer to pointer */
 template<typename Type, typename TObject>
-inline const Type* CastP(const TObject *X)
+static inline const Type* CastP(const TObject *X)
 { return reinterpret_cast<const Type*> (X); }
 template<typename Type, typename TObject>
-inline Type* CastP(TObject *X)
+static inline Type* CastP(TObject *X)
 { return reinterpret_cast<Type*> (X); }
 
 /* StructAtOffset<T>(P,Ofs) returns the struct T& that is placed at memory
  * location pointed to by P plus Ofs bytes. */
 template<typename Type>
-inline const Type& StructAtOffset(const void *P, unsigned int offset)
+static inline const Type& StructAtOffset(const void *P, unsigned int offset)
 { return * reinterpret_cast<const Type*> ((const char *) P + offset); }
 template<typename Type>
-inline Type& StructAtOffset(void *P, unsigned int offset)
+static inline Type& StructAtOffset(void *P, unsigned int offset)
 { return * reinterpret_cast<Type*> ((char *) P + offset); }
 
 /* StructAfter<T>(X) returns the struct T& that is placed after X.
  * Works with X of variable size also.  X must implement get_size() */
 template<typename Type, typename TObject>
-inline const Type& StructAfter(const TObject &X)
+static inline const Type& StructAfter(const TObject &X)
 { return StructAtOffset<Type>(&X, X.get_size()); }
 template<typename Type, typename TObject>
-inline Type& StructAfter(TObject &X)
+static inline Type& StructAfter(TObject &X)
 { return StructAtOffset<Type>(&X, X.get_size()); }
 
 
@@ -132,7 +132,7 @@ inline Type& StructAfter(TObject &X)
 
 /* Global nul-content Null pool.  Enlarge as necessary. */
 /* TODO This really should be a extern HB_INTERNAL and defined somewhere... */
-static const void *_NullPool[64 / sizeof (void *)];
+static const void *_NullPool[(256+8) / sizeof (void *)];
 
 /* Generic nul-content Null objects. */
 template <typename Type>
@@ -145,7 +145,7 @@ static inline const Type& Null (void) {
 #define DEFINE_NULL_DATA(Type, data) \
 static const char _Null##Type[sizeof (Type) + 1] = data; /* +1 is for nul-termination in data */ \
 template <> \
-inline const Type& Null<Type> (void) { \
+/*static*/ inline const Type& Null<Type> (void) { \
   return *CastP<Type> (_Null##Type); \
 } /* The following line really exists such that we end in a place needing semicolon */ \
 ASSERT_STATIC (Type::min_size + 1 <= sizeof (_Null##Type))
@@ -264,6 +264,15 @@ struct hb_sanitize_context_t
        this->writable ? "GRANTED" : "DENIED");
 
     return TRACE_RETURN (this->writable);
+  }
+
+  template <typename Type, typename ValueType>
+  inline bool try_set (Type *obj, const ValueType &v) {
+    if (this->may_edit (obj, obj->static_size)) {
+      obj->set (v);
+      return true;
+    }
+    return false;
   }
 
   mutable unsigned int debug_depth;
@@ -572,6 +581,7 @@ struct IntType
   DEFINE_SIZE_STATIC (Size);
 };
 
+typedef		uint8_t	     BYTE;	/* 8-bit unsigned integer. */
 typedef IntType<uint16_t, 2> USHORT;	/* 16-bit unsigned integer. */
 typedef IntType<int16_t,  2> SHORT;	/* 16-bit signed integer. */
 typedef IntType<uint32_t, 4> ULONG;	/* 32-bit unsigned integer. */
@@ -721,26 +731,15 @@ struct GenericOffsetTo : OffsetType
     return TRACE_RETURN (likely (obj.sanitize (c, user_data)) || neuter (c));
   }
 
-  inline bool try_set (hb_sanitize_context_t *c, const OffsetType &v) {
-    if (c->may_edit (this, this->static_size)) {
-      this->set (v);
-      return true;
-    }
-    return false;
-  }
   /* Set the offset to Null */
   inline bool neuter (hb_sanitize_context_t *c) {
-    if (c->may_edit (this, this->static_size)) {
-      this->set (0); /* 0 is Null offset */
-      return true;
-    }
-    return false;
+    return c->try_set (this, 0);
   }
 };
 template <typename Base, typename OffsetType, typename Type>
-inline const Type& operator + (const Base &base, const GenericOffsetTo<OffsetType, Type> &offset) { return offset (base); }
+static inline const Type& operator + (const Base &base, const GenericOffsetTo<OffsetType, Type> &offset) { return offset (base); }
 template <typename Base, typename OffsetType, typename Type>
-inline Type& operator + (Base &base, GenericOffsetTo<OffsetType, Type> &offset) { return offset (base); }
+static inline Type& operator + (Base &base, GenericOffsetTo<OffsetType, Type> &offset) { return offset (base); }
 
 template <typename Type>
 struct OffsetTo : GenericOffsetTo<Offset, Type> {};
@@ -835,6 +834,16 @@ struct GenericArrayOf
       if (unlikely (!array[i].sanitize (c, base, user_data)))
         return TRACE_RETURN (false);
     return TRACE_RETURN (true);
+  }
+
+  template <typename SearchType>
+  inline int search (const SearchType &x) const
+  {
+    unsigned int count = len;
+    for (unsigned int i = 0; i < count; i++)
+      if (!this->array[i].cmp (x))
+        return i;
+    return -1;
   }
 
   private:
@@ -949,9 +958,9 @@ struct HeadlessArrayOf
 
 
 /* An array with sorted elements.  Supports binary searching. */
-template <typename Type>
-struct SortedArrayOf : ArrayOf<Type> {
-
+template <typename LenType, typename Type>
+struct GenericSortedArrayOf : GenericArrayOf<LenType, Type>
+{
   template <typename SearchType>
   inline int search (const SearchType &x) const
   {
@@ -971,6 +980,14 @@ struct SortedArrayOf : ArrayOf<Type> {
     return -1;
   }
 };
+
+/* A sorted array with a USHORT number of elements. */
+template <typename Type>
+struct SortedArrayOf : GenericSortedArrayOf<USHORT, Type> {};
+
+/* A sorted array with a ULONG number of elements. */
+template <typename Type>
+struct LongSortedArrayOf : GenericSortedArrayOf<ULONG, Type> {};
 
 
 } /* namespace OT */

@@ -54,22 +54,76 @@
 #include <stdarg.h>
 
 
+/* Compiler attributes */
 
-/* Essentials */
 
-#ifndef NULL
-# define NULL ((void *) 0)
+#if defined(__GNUC__) && (__GNUC__ > 2) && defined(__OPTIMIZE__)
+#define _HB_BOOLEAN_EXPR(expr) ((expr) ? 1 : 0)
+#define likely(expr) (__builtin_expect (_HB_BOOLEAN_EXPR(expr), 1))
+#define unlikely(expr) (__builtin_expect (_HB_BOOLEAN_EXPR(expr), 0))
+#else
+#define likely(expr) (expr)
+#define unlikely(expr) (expr)
 #endif
 
+#ifndef __GNUC__
+#undef __attribute__
+#define __attribute__(x)
+#endif
 
-/* Void! */
-struct _hb_void_t {};
-typedef const _hb_void_t &hb_void_t;
-#define HB_VOID (* (const _hb_void_t *) NULL)
+#if __GNUC__ >= 3
+#define HB_PURE_FUNC	__attribute__((pure))
+#define HB_CONST_FUNC	__attribute__((const))
+#define HB_PRINTF_FUNC(format_idx, arg_idx) __attribute__((__format__ (__printf__, format_idx, arg_idx)))
+#else
+#define HB_PURE_FUNC
+#define HB_CONST_FUNC
+#define HB_PRINTF_FUNC(format_idx, arg_idx)
+#endif
+#if __GNUC__ >= 4
+#define HB_UNUSED	__attribute__((unused))
+#else
+#define HB_UNUSED
+#endif
+
+#ifndef HB_INTERNAL
+# ifndef __MINGW32__
+#  define HB_INTERNAL __attribute__((__visibility__("hidden")))
+# else
+#  define HB_INTERNAL
+# endif
+#endif
+
+#if (defined(__WIN32__) && !defined(__WINE__)) || defined(_MSC_VER)
+#define snprintf _snprintf
+#endif
+
+#ifdef _MSC_VER
+#undef inline
+#define inline __inline
+#endif
+
+#ifdef __STRICT_ANSI__
+#undef inline
+#define inline __inline__
+#endif
+
+#if __GNUC__ >= 3
+#define HB_FUNC __PRETTY_FUNCTION__
+#elif defined(_MSC_VER)
+#define HB_FUNC __FUNCSIG__
+#else
+#define HB_FUNC __func__
+#endif
+
 
 
 /* Basics */
 
+
+#ifndef NULL
+# define NULL ((void *) 0)
+#endif
 
 #undef MIN
 template <typename Type>
@@ -92,7 +146,7 @@ static inline unsigned int ARRAY_LENGTH (const Type (&)[n]) { return n; }
 #define HB_STMT_START do
 #define HB_STMT_END   while (0)
 
-#define _ASSERT_STATIC1(_line, _cond)	typedef int _static_assert_on_line_##_line##_failed[(_cond)?1:-1]
+#define _ASSERT_STATIC1(_line, _cond)	HB_UNUSED typedef int _static_assert_on_line_##_line##_failed[(_cond)?1:-1]
 #define _ASSERT_STATIC0(_line, _cond)	_ASSERT_STATIC1 (_line, (_cond))
 #define ASSERT_STATIC(_cond)		_ASSERT_STATIC0 (__LINE__, (_cond))
 
@@ -139,7 +193,7 @@ ASSERT_STATIC (sizeof (hb_var_int_t) == 4);
 
 /* Check _assertion in a method environment */
 #define _ASSERT_POD1(_line) \
-	inline void _static_assertion_on_line_##_line (void) const \
+	HB_UNUSED inline void _static_assertion_on_line_##_line (void) const \
 	{ _ASSERT_INSTANCE_POD1 (_line, *this); /* Make sure it's POD. */ }
 # define _ASSERT_POD0(_line)	_ASSERT_POD1 (_line)
 # define ASSERT_POD()		_ASSERT_POD0 (__LINE__)
@@ -148,68 +202,10 @@ ASSERT_STATIC (sizeof (hb_var_int_t) == 4);
 
 /* Misc */
 
-
-#if defined(__GNUC__) && (__GNUC__ > 2) && defined(__OPTIMIZE__)
-#define _HB_BOOLEAN_EXPR(expr) ((expr) ? 1 : 0)
-#define likely(expr) (__builtin_expect (_HB_BOOLEAN_EXPR(expr), 1))
-#define unlikely(expr) (__builtin_expect (_HB_BOOLEAN_EXPR(expr), 0))
-#else
-#define likely(expr) (expr)
-#define unlikely(expr) (expr)
-#endif
-
-#ifndef __GNUC__
-#undef __attribute__
-#define __attribute__(x)
-#endif
-
-#if __GNUC__ >= 3
-#define HB_PURE_FUNC	__attribute__((pure))
-#define HB_CONST_FUNC	__attribute__((const))
-#define HB_PRINTF_FUNC(format_idx, arg_idx) __attribute__((__format__ (__printf__, format_idx, arg_idx)))
-#else
-#define HB_PURE_FUNC
-#define HB_CONST_FUNC
-#define HB_PRINTF_FUNC(format_idx, arg_idx)
-#endif
-#if __GNUC__ >= 4
-#define HB_UNUSED	__attribute__((unused))
-#else
-#define HB_UNUSED
-#endif
-
-#ifndef HB_INTERNAL
-# ifndef __MINGW32__
-#  define HB_INTERNAL __attribute__((__visibility__("hidden")))
-# else
-#  define HB_INTERNAL
-# endif
-#endif
-
-
-#if (defined(__WIN32__) && !defined(__WINE__)) || defined(_MSC_VER)
-#define snprintf _snprintf
-#endif
-
-#ifdef _MSC_VER
-#undef inline
-#define inline __inline
-#endif
-
-#ifdef __STRICT_ANSI__
-#undef inline
-#define inline __inline__
-#endif
-
-
-#if __GNUC__ >= 3
-#define HB_FUNC __PRETTY_FUNCTION__
-#elif defined(_MSC_VER)
-#define HB_FUNC __FUNCSIG__
-#else
-#define HB_FUNC __func__
-#endif
-
+/* Void! */
+struct _hb_void_t {};
+typedef const _hb_void_t &hb_void_t;
+#define HB_VOID (* (const _hb_void_t *) NULL)
 
 /* Return the number of 1 bits in mask. */
 static inline HB_CONST_FUNC unsigned int
@@ -725,7 +721,7 @@ static inline void _hb_warn_no_return (bool returned)
   }
 }
 template <>
-inline void _hb_warn_no_return<hb_void_t> (bool returned HB_UNUSED)
+/*static*/ inline void _hb_warn_no_return<hb_void_t> (bool returned HB_UNUSED)
 {}
 
 template <int max_level, typename ret_t>

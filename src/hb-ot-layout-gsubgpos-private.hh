@@ -567,13 +567,25 @@ struct hb_apply_context_t
 
   inline void _set_glyph_props (hb_codepoint_t glyph_index,
 			  unsigned int class_guess = 0,
-			  bool ligature = false) const
+			  bool ligature = false,
+			  bool component = false) const
   {
     unsigned int add_in = _hb_glyph_info_get_glyph_props (&buffer->cur()) &
 			  HB_OT_LAYOUT_GLYPH_PROPS_PRESERVE;
     add_in |= HB_OT_LAYOUT_GLYPH_PROPS_SUBSTITUTED;
     if (ligature)
+    {
       add_in |= HB_OT_LAYOUT_GLYPH_PROPS_LIGATED;
+      /* In the only place that the MULTIPLIED bit is used, Uniscribe
+       * seems to only care about the "last" transformation between
+       * Ligature and Multiple substitions.  Ie. if you ligate, expand,
+       * and ligate again, it forgives the multiplication and acts as
+       * if only ligation happened.  As such, clear MULTIPLIED bit.
+       */
+      add_in &= ~HB_OT_LAYOUT_GLYPH_PROPS_MULTIPLIED;
+    }
+    if (component)
+      add_in |= HB_OT_LAYOUT_GLYPH_PROPS_MULTIPLIED;
     if (likely (has_glyph_classes))
       _hb_glyph_info_set_glyph_props (&buffer->cur(), add_in | gdef.get_glyph_props (glyph_index));
     else if (class_guess)
@@ -596,10 +608,10 @@ struct hb_apply_context_t
     _set_glyph_props (glyph_index, class_guess, true);
     buffer->replace_glyph (glyph_index);
   }
-  inline void output_glyph (hb_codepoint_t glyph_index,
-			    unsigned int class_guess) const
+  inline void output_glyph_for_component (hb_codepoint_t glyph_index,
+					  unsigned int class_guess) const
   {
-    _set_glyph_props (glyph_index, class_guess);
+    _set_glyph_props (glyph_index, class_guess, false, true);
     buffer->output_glyph (glyph_index);
   }
 };
@@ -995,7 +1007,9 @@ static inline bool apply_lookup (hb_apply_context_t *c,
 
     /* Recursed lookup changed buffer len.  Adjust. */
 
-    /* end can't go back past the current match position. */
+    /* end can't go back past the current match position.
+     * Note: this is only true because we do NOT allow MultipleSubst
+     * with zero sequence len. */
     end = MAX ((int) match_positions[idx] + 1, int (end) + delta);
 
     unsigned int next = idx + 1; /* next now is the position after the recursed lookup. */
