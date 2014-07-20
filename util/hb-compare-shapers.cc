@@ -18,6 +18,7 @@ struct output_buffer_t
     line_no = 0;
     font = hb_font_reference (font_opts->get_font ());
     memset (&stats, 0, sizeof (stats));
+    test_total = ref_total = 0.0;
 
     if (!options.output_format)
       output_format = HB_BUFFER_SERIALIZE_FORMAT_TEXT;
@@ -123,7 +124,7 @@ struct output_buffer_t
     if (diffs & HB_BUFFER_COMPARE_DOTTED_CIRCLE_PRESENT)
       format.serialize_message (line_no, "note: dottedcircle", gs);
   }
-  void collect_stats (hb_buffer_differences_t diffs)
+  void collect_stats (hb_buffer_differences_t diffs, double test_time, double ref_time)
   {
     unsigned int *counters;
     if (diffs & HB_BUFFER_COMPARE_LENGTH_MISMATCH)
@@ -143,6 +144,8 @@ struct output_buffer_t
       counters[2]++;
     else if (diffs & HB_BUFFER_COMPARE_NOTDEF_PRESENT)
       counters[3]++;
+    test_total += test_time;
+    ref_total += ref_time;
   }
   void report_summary ()
   {
@@ -152,6 +155,8 @@ struct output_buffer_t
     fprintf (options.fp, "summary: Glyph    %d (%d/%d/%d)\n", stats.glyph[0], stats.glyph[1], stats.glyph[2], stats.glyph[3]);
     fprintf (options.fp, "summary: Position %d (%d/%d/%d)\n", stats.position[0], stats.position[1], stats.position[2], stats.position[3]);
     fprintf (options.fp, "summary: Cluster  %d (%d/%d/%d)\n", stats.cluster[0], stats.cluster[1], stats.cluster[2], stats.cluster[3]);
+    if (test_total > 0.0 && ref_total > 0.0)
+      fprintf (options.fp, "timings: test %lf reference %lf\n", test_total, ref_total);
   }
   void finish_line ()
   {
@@ -186,6 +191,8 @@ struct output_buffer_t
     unsigned int cluster[4];
     unsigned int match[4];
   } stats;
+
+  double test_total, ref_total;
 
   GString *gs;
   unsigned int line_no;

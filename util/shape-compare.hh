@@ -1,6 +1,10 @@
 #include "options.hh"
 #include "helper-cairo.hh"
 
+#if defined(_WIN32) || defined(__CYGWIN__)
+#include "windows.h"
+#endif
+
 #ifndef HB_SHAPE_COMPARE_HH
 #define HB_SHAPE_COMPARE_HH
 
@@ -34,6 +38,8 @@ struct shape_compare_t
 		     const char   *text_after,
 		     const font_options_t *font_opts)
   {
+    double test_time = 0.0, ref_time = 0.0;
+
     output.new_line ();
 
     shaper.populate_buffer (buffer, text, text_len, text_before, text_after);
@@ -41,15 +47,42 @@ struct shape_compare_t
 
     output.consume_text (buffer, text, text_len, shaper.utf8_clusters);
 
-    if (!shaper.shape (font, buffer)) {
-      failed = true;
-      hb_buffer_set_length (buffer, 0);
+#if defined(_WIN32) || defined(__CYGWIN__)
+    LARGE_INTEGER start, end, freq;
+    if (!QueryPerformanceFrequency(&freq))
+      freq.QuadPart = 0;
+#endif
+    static unsigned int serial = 0;
+    for (unsigned int i = 0; i < 2; ++i) {
+      if ((i & 1) == (serial & 1)) {
+#if defined(_WIN32) || defined(__CYGWIN__)
+        QueryPerformanceCounter(&start);
+#endif
+        if (!shaper.shape (font, buffer)) {
+          failed = true;
+          hb_buffer_set_length (buffer, 0);
+        }
+#if defined(_WIN32) || defined(__CYGWIN__)
+        if (freq.QuadPart > 0 && QueryPerformanceCounter(&end)) {
+          test_time = (end.QuadPart - start.QuadPart) / (double)freq.QuadPart;
+        }
+#endif
+      } else {
+#if defined(_WIN32) || defined(__CYGWIN__)
+        QueryPerformanceCounter(&start);
+#endif
+        if (!shaper.shape_reference (font, ref_buffer)) {
+          ref_failed = true;
+          hb_buffer_set_length (ref_buffer, 0);
+        }
+#if defined(_WIN32) || defined(__CYGWIN__)
+        if (freq.QuadPart > 0 && QueryPerformanceCounter(&end)) {
+          ref_time = (end.QuadPart - start.QuadPart) / (double)freq.QuadPart;
+        }
+#endif
+      }
     }
-
-    if (!shaper.shape_reference (font, ref_buffer)) {
-      ref_failed = true;
-      hb_buffer_set_length (ref_buffer, 0);
-    }
+    serial++;
 
     hb_buffer_differences_t diffs = hb_buffers_compare (buffer, ref_buffer, dotted_circle);
 
@@ -102,7 +135,7 @@ struct shape_compare_t
       output.finish_line ();
     }
 
-    output.collect_stats (diffs);
+    output.collect_stats (diffs, test_time, ref_time);
   }
 
   void finish (const font_options_t *font_opts)
