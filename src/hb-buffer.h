@@ -357,7 +357,9 @@ typedef enum {
      though we do still scan reference for dottedcircle / .notdef glyphs. */
   HB_BUFFER_COMPARE_LENGTH_MISMATCH       = 0x0040,
   /* Buffers with different content_type cannot be meaningfully compared in any further detail. */
-  HB_BUFFER_COMPARE_CONTENT_TYPE_MISMATCH = 0x0080
+  HB_BUFFER_COMPARE_CONTENT_TYPE_MISMATCH = 0x0080,
+  /* Flag that buffers render visually identically despite different content. */
+  HB_BUFFER_COMPARE_VISUAL_MATCH          = 0x0100
 } hb_buffer_differences_t;
 
 /* Compare the contents of two buffers. */
